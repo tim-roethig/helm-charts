@@ -1,0 +1,25 @@
+apiVersion: v2
+name: terminals-minimal
+version: 0.1.0
+appVersion: "0.0.3"
+
+home: https://github.com/open-webui/open-terminal
+icon: >-
+  https://raw.githubusercontent.com/open-webui/open-webui/main/static/favicon.png
+
+description: >-
+  Minimal Open WebUI Terminals: a single orchestrator that spawns per-user
+  Open Terminal pods directly (no operator, no CRD). OpenShift-ready.
+keywords:
+  - terminals
+  - open-terminal
+  - open-webui
+  - openshift
+
+sources:
+  - https://github.com/open-webui/helm-charts
+  - https://github.com/open-webui/terminals
+  - https://github.com/open-webui/open-terminal
+
+annotations:
+  licenses: MIT
