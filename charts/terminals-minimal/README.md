@@ -1,89 +1,74 @@
 # terminals-minimal
 
-A deliberately small Helm chart that runs **Open WebUI Terminals** with as
-little templating and as few moving parts as possible.
+Open WebUI **Terminals** as plain, static Kubernetes manifests — **no Helm
+templating** (`{{ }}`) anywhere. Every value is written literally, so you can
+read exactly what will be created and apply it with either `kubectl` or `helm`.
 
-The official [`terminals`](../terminals) chart ships a Kubernetes **operator**,
-a **CRD** (`terminals.openwebui.com`) and an **orchestrator**. This chart drops
-the operator and the CRD entirely: it deploys **only the orchestrator**, running
-with `TERMINALS_BACKEND=kubernetes`, so the orchestrator itself talks to the
-Kubernetes API and spawns one Open Terminal pod per user on demand.
+It deploys **only the orchestrator** (`TERMINALS_BACKEND=kubernetes`): the
+orchestrator talks to the Kubernetes API itself and spawns one Open Terminal pod
+per user. There is **no operator and no CRD**.
 
 ```
-Open WebUI  ──HTTP (bearer)──▶  orchestrator (this chart)  ──creates──▶  per-user terminal pods
+Open WebUI ──HTTP (bearer)──▶ orchestrator (this chart) ──creates──▶ per-user terminal pods
 ```
 
-What gets installed:
+## Files
 
-| Resource | Purpose |
-|----------|---------|
-| Deployment + Service | the orchestrator Open WebUI connects to |
-| ServiceAccount + **Role** + RoleBinding | lets the orchestrator create terminal pods **in its own namespace** (namespaced Role, no ClusterRole) |
-| Secret | the shared bearer API key (auto-generated if not supplied) |
-| Route *(optional)* | OpenShift Route, only if Open WebUI lives outside the cluster |
+```
+templates/secret.yaml       # shared bearer API key
+templates/rbac.yaml         # ServiceAccount + namespaced Role + RoleBinding
+templates/deployment.yaml   # the orchestrator
+templates/service.yaml      # ClusterIP Service Open WebUI connects to
+templates/NOTES.txt         # printed by `helm install` (ignored by kubectl)
+optional-route.yaml         # OpenShift Route — apply only if OWUI is off-cluster
+```
 
-No operator, no CRD, no cluster-scoped RBAC.
+Everything is hard-wired to name **`openwebui-terminals`** in namespace
+**`open-webui`**. To use a different namespace, find/replace it first:
+
+```bash
+grep -rl 'open-webui' charts/terminals-minimal | xargs sed -i 's/open-webui/YOUR_NS/g'
+```
 
 ## Install
 
-```bash
-helm install terminals ./charts/terminals-minimal \
-  --namespace open-webui --create-namespace
-```
-
-On first install the chart generates a random API key. It is **preserved across
-`helm upgrade`** (it is read back from the existing Secret), so the connection to
-Open WebUI does not break on upgrades. To pin your own key:
+Create the namespace, then apply the manifests. Pick either tool:
 
 ```bash
-helm install terminals ./charts/terminals-minimal -n open-webui \
-  --set apiKey=$(openssl rand -hex 24)
+kubectl create namespace open-webui
+
+# with kubectl (NOTES.txt is skipped automatically):
+kubectl apply -f charts/terminals-minimal/templates/
+
+# ...or with helm (same static objects):
+helm install terminals ./charts/terminals-minimal -n open-webui
 ```
+
+> **Set your own API key** before (or right after) installing. Edit
+> `templates/secret.yaml` and replace the `api-key` value, e.g. with
+> `openssl rand -hex 24`. The shipped value is a placeholder default.
 
 ## Connect it to your Open WebUI instance
 
 Open WebUI discovers terminal servers through the `TERMINAL_SERVER_CONNECTIONS`
-environment variable — a JSON array pointing at the orchestrator with the shared
-key.
+environment variable — a JSON array pointing at the orchestrator with the key.
 
-**1. Read the API key:**
+**1. Read the key:**
 
 ```bash
-kubectl -n open-webui get secret terminals-terminals-minimal-api-key \
+kubectl -n open-webui get secret openwebui-terminals-api-key \
   -o jsonpath='{.data.api-key}' | base64 -d ; echo
 ```
 
-**2. Set this env var on your Open WebUI deployment** (same cluster → use the
-in-cluster Service DNS name; substitute your `<API_KEY>`):
-
-```json
-[
-  {
-    "id": "terminals",
-    "name": "Terminals",
-    "enabled": true,
-    "url": "http://terminals-terminals-minimal.open-webui.svc.cluster.local:8080",
-    "key": "<API_KEY>",
-    "auth_type": "bearer",
-    "config": { "access_grants": [ { "principal_type": "user", "principal_id": "*", "permission": "read" } ] }
-  }
-]
-```
-
-As a one-liner for a raw Deployment:
+**2. Set the env var on your Open WebUI deployment** (same cluster → use the
+in-cluster Service DNS; substitute `<API_KEY>`):
 
 ```bash
 kubectl -n open-webui set env deployment/open-webui \
-  TERMINAL_SERVER_CONNECTIONS='[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://terminals-terminals-minimal.open-webui.svc.cluster.local:8080","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]'
+  TERMINAL_SERVER_CONNECTIONS='[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://openwebui-terminals.open-webui.svc.cluster.local:8080","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]'
 ```
 
-If you deploy Open WebUI with **its own Helm chart**, you do not need this at all —
-set `terminals.enabled=true` there and it wires up the bundled subchart. This
-chart is for the case where you want Terminals **standalone / minimal** and
-connect it to an Open WebUI you already run.
-
-Open a chat in Open WebUI afterwards and use the Terminal tool — watch the pods
-appear:
+Restart Open WebUI, open a chat, and use the Terminal tool. Watch pods appear:
 
 ```bash
 kubectl -n open-webui get pods -l app.kubernetes.io/component=terminal -w
@@ -91,44 +76,32 @@ kubectl -n open-webui get pods -l app.kubernetes.io/component=terminal -w
 
 ## OpenShift notes
 
-This chart is built for OpenShift's **`restricted-v2`** SCC — no `anyuid`, no
-extra SCC, no privileged pods.
+Built for OpenShift's **`restricted-v2`** SCC — no `anyuid`, no privileged pods.
 
-* **No hard-coded UIDs.** Neither the orchestrator nor the spawned terminal pods
-  set a numeric `runAsUser`/`fsGroup`, so OpenShift assigns them from the
-  namespace's UID range. `restricted: true` (default) makes the orchestrator
-  spawn terminal pods with `runAsNonRoot`, `allowPrivilegeEscalation: false`,
-  `capabilities.drop: [ALL]` and the `RuntimeDefault` seccomp profile — exactly
-  what `restricted-v2` requires.
-* **Storage.** Leave `persistence.storageClass` empty to use the cluster's
-  default StorageClass (recommended on OpenShift/ROSA/ARO).
-* **External Open WebUI.** If Open WebUI runs outside this cluster, expose the
-  orchestrator with a Route:
+* **No hard-coded UIDs.** Neither the orchestrator nor the spawned pods set a
+  numeric `runAsUser`/`fsGroup`, so OpenShift assigns them from the namespace
+  range. `TERMINALS_KUBERNETES_RESTRICTED=true` makes the spawned pods use
+  `runAsNonRoot`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`
+  and `RuntimeDefault` seccomp — exactly what `restricted-v2` requires.
+* **Storage.** `TERMINALS_KUBERNETES_STORAGE_CLASS` is left unset so terminal
+  PVCs use the cluster's default StorageClass. Uncomment it in
+  `templates/deployment.yaml` to pin a class.
+* **External Open WebUI.** If Open WebUI runs outside this cluster, apply the
+  Route and use `https://<route-host>` as the `url` above:
 
   ```bash
-  helm upgrade terminals ./charts/terminals-minimal -n open-webui \
-    --set route.enabled=true
-  oc -n open-webui get route terminals-terminals-minimal -o jsonpath='{.spec.host}'
+  oc apply -f charts/terminals-minimal/optional-route.yaml
+  oc -n open-webui get route openwebui-terminals -o jsonpath='{.spec.host}' ; echo
   ```
 
-  Then use `https://<that-host>` as the `url` in `TERMINAL_SERVER_CONNECTIONS`.
+## Changing settings
 
-## Values
+Because there is no templating, you configure this by **editing the YAML**:
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `image.repository` / `image.tag` | `ghcr.io/open-webui/terminals` / `latest` | Orchestrator image |
-| `terminalImage` | `ghcr.io/open-webui/open-terminal:latest` | Image for each spawned terminal pod |
-| `service.type` / `service.port` | `ClusterIP` / `8080` | Orchestrator Service |
-| `apiKey` | `""` (auto-generated) | Shared bearer key |
-| `existingSecret` | `""` | Use an existing Secret with key `api-key` |
-| `idleTimeoutMinutes` | `30` | Idle terminal cleanup (0 = never) |
-| `persistence.enabled` / `.size` / `.storageClass` / `.mode` | `true` / `1Gi` / `""` / `per-user` | Per-terminal storage |
-| `restricted` | `true` | OpenShift/PSA-restricted security context for spawned pods |
-| `terminalLimits.cpu` / `.memory` / `.storage` | `""` | Optional hard caps per terminal |
-| `resources` | requests 50m/128Mi, limits 500m/256Mi | Orchestrator pod resources |
-| `route.enabled` / `.host` / `.tls` | `false` / `""` / `true` | Optional OpenShift Route |
-| `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | Orchestrator scheduling |
-
-> Resource names above assume the release is named `terminals`. They follow the
-> pattern `<release>-terminals-minimal`.
+| Want to change | Edit |
+|----------------|------|
+| API key | `templates/secret.yaml` → `stringData.api-key` |
+| Terminal image / idle timeout / storage size | `templates/deployment.yaml` env vars |
+| Pin a StorageClass | uncomment `TERMINALS_KUBERNETES_STORAGE_CLASS` |
+| Namespace / names | find-replace `open-webui` / `openwebui-terminals` |
+| Expose externally | apply `optional-route.yaml` |

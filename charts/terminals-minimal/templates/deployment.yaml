@@ -1,35 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
+  namespace: open-webui
   labels:
-    {{- include "terminals-minimal.labels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
-      {{- include "terminals-minimal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: openwebui-terminals
   template:
     metadata:
       labels:
-        {{- include "terminals-minimal.labels" . | nindent 8 }}
+        app.kubernetes.io/name: openwebui-terminals
+        app.kubernetes.io/component: orchestrator
+        app.kubernetes.io/part-of: open-terminal
     spec:
-      serviceAccountName: {{ include "terminals-minimal.fullname" . }}
-      {{- with .Values.podSecurityContext }}
+      serviceAccountName: openwebui-terminals
+      # OpenShift restricted-v2 friendly: do NOT set runAsUser here, the SCC
+      # assigns one from the namespace UID range.
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: orchestrator
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- with .Values.containerSecurityContext }}
+          image: "ghcr.io/open-webui/terminals:latest"
+          imagePullPolicy: IfNotPresent
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: 8080
               protocol: TCP
           env:
             - name: TERMINALS_BACKEND
@@ -37,41 +45,33 @@ spec:
             - name: TERMINALS_HOST
               value: "0.0.0.0"
             - name: TERMINALS_PORT
-              value: {{ .Values.service.port | quote }}
+              value: "8080"
+            # Namespace the orchestrator spawns terminal pods into (this one).
             - name: TERMINALS_KUBERNETES_NAMESPACE
-              value: {{ .Release.Namespace | quote }}
+              value: "open-webui"
+            # Image used for each per-user terminal pod.
             - name: TERMINALS_IMAGE
-              value: {{ .Values.terminalImage | quote }}
+              value: "ghcr.io/open-webui/open-terminal:latest"
+            # Idle terminal cleanup, minutes (0 = never).
             - name: TERMINALS_IDLE_TIMEOUT_MINUTES
-              value: {{ .Values.idleTimeoutMinutes | quote }}
+              value: "30"
+            # Apply restricted (OpenShift/PSA-compatible) security context to
+            # spawned terminal pods: runAsNonRoot, drop ALL caps, no privilege
+            # escalation, RuntimeDefault seccomp -- without pinning a UID.
             - name: TERMINALS_KUBERNETES_RESTRICTED
-              value: {{ .Values.restricted | quote }}
-            {{- if .Values.persistence.enabled }}
+              value: "true"
+            # Per-terminal persistent storage.
             - name: TERMINALS_KUBERNETES_STORAGE_SIZE
-              value: {{ .Values.persistence.size | quote }}
+              value: "1Gi"
             - name: TERMINALS_KUBERNETES_STORAGE_MODE
-              value: {{ .Values.persistence.mode | quote }}
-            {{- if .Values.persistence.storageClass }}
-            - name: TERMINALS_KUBERNETES_STORAGE_CLASS
-              value: {{ .Values.persistence.storageClass | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.terminalLimits.cpu }}
-            - name: TERMINALS_MAX_CPU
-              value: {{ .Values.terminalLimits.cpu | quote }}
-            {{- end }}
-            {{- if .Values.terminalLimits.memory }}
-            - name: TERMINALS_MAX_MEMORY
-              value: {{ .Values.terminalLimits.memory | quote }}
-            {{- end }}
-            {{- if .Values.terminalLimits.storage }}
-            - name: TERMINALS_MAX_STORAGE
-              value: {{ .Values.terminalLimits.storage | quote }}
-            {{- end }}
+              value: "per-user"
+            # Leave STORAGE_CLASS unset to use the cluster's default StorageClass.
+            # - name: TERMINALS_KUBERNETES_STORAGE_CLASS
+            #   value: "gp3"
             - name: TERMINALS_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "terminals-minimal.secretName" . }}
+                  name: openwebui-terminals-api-key
                   key: api-key
           readinessProbe:
             httpGet:
@@ -85,19 +85,10 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 15
-          {{- with .Values.resources }}
           resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

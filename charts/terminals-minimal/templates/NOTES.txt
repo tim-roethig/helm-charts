@@ -1,30 +1,23 @@
-Open WebUI Terminals (minimal) is installed.
+Open WebUI Terminals (minimal, static) is installed in namespace "open-webui".
 
-Orchestrator Service (in-cluster URL Open WebUI should use):
+Orchestrator in-cluster URL (use this in Open WebUI):
 
-  http://{{ include "terminals-minimal.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+  http://openwebui-terminals.open-webui.svc.cluster.local:8080
 
-1. Get the shared API key:
+1. Read the shared API key:
 
-   kubectl -n {{ .Release.Namespace }} get secret {{ include "terminals-minimal.secretName" . }} \
+   kubectl -n open-webui get secret openwebui-terminals-api-key \
      -o jsonpath='{.data.api-key}' | base64 -d ; echo
 
-2. Point Open WebUI at the orchestrator by setting this environment variable on
-   your Open WebUI deployment (replace <API_KEY> with the value from step 1):
+2. Set this on your Open WebUI deployment (replace <API_KEY>):
 
-   TERMINAL_SERVER_CONNECTIONS=[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://{{ include "terminals-minimal.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]
+   TERMINAL_SERVER_CONNECTIONS=[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://openwebui-terminals.open-webui.svc.cluster.local:8080","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]
 
-   Restart Open WebUI, then open a chat and use the Terminal tool.
+   Restart Open WebUI, open a chat, and use the Terminal tool.
 
-{{- if .Values.route.enabled }}
+3. Watch terminal pods appear:
 
-   An OpenShift Route was created. Its external host:
+   kubectl -n open-webui get pods -l app.kubernetes.io/component=terminal -w
 
-   oc -n {{ .Release.Namespace }} get route {{ include "terminals-minimal.fullname" . }} -o jsonpath='{.spec.host}' ; echo
-
-   Use https://<that-host> as the "url" above if Open WebUI is outside the cluster.
-{{- end }}
-
-3. Watch terminal pods get created as users open terminals:
-
-   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=terminal -w
+External Open WebUI? Apply the optional Route:
+   oc apply -f charts/terminals-minimal/optional-route.yaml

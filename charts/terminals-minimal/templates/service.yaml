@@ -1,15 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
+  namespace: open-webui
   labels:
-    {{- include "terminals-minimal.labels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
 spec:
-  type: {{ .Values.service.type }}
+  type: ClusterIP
   selector:
-    {{- include "terminals-minimal.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
   ports:
     - name: http
-      port: {{ .Values.service.port }}
+      port: 8080
       targetPort: http
       protocol: TCP

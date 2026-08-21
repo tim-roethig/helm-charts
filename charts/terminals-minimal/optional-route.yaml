@@ -1,0 +1,30 @@
+# OPTIONAL OpenShift Route.
+#
+# Apply this ONLY if your Open WebUI instance runs OUTSIDE this cluster and must
+# reach the orchestrator over an external URL:
+#
+#   oc apply -f charts/terminals-minimal/optional-route.yaml
+#   oc -n open-webui get route openwebui-terminals -o jsonpath='{.spec.host}' ; echo
+#
+# When Open WebUI is in the same cluster, DO NOT apply this -- use the in-cluster
+# Service DNS name instead (see README).
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openwebui-terminals
+  namespace: open-webui
+  labels:
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
+spec:
+  to:
+    kind: Service
+    name: openwebui-terminals
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

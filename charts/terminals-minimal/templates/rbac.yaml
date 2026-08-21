@@ -1,18 +1,24 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
+  namespace: open-webui
   labels:
-    {{- include "terminals-minimal.labels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
 ---
 # Namespaced Role: the orchestrator only ever creates terminal pods and their
 # supporting objects in its OWN namespace, so no ClusterRole is required.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
+  namespace: open-webui
   labels:
-    {{- include "terminals-minimal.labels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
 rules:
   - apiGroups: [""]
     resources: ["pods", "services", "persistentvolumeclaims", "secrets", "configmaps"]
@@ -27,14 +33,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
+  namespace: open-webui
   labels:
-    {{- include "terminals-minimal.labels" . | nindent 4 }}
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "terminals-minimal.fullname" . }}
+  name: openwebui-terminals
 subjects:
   - kind: ServiceAccount
-    name: {{ include "terminals-minimal.fullname" . }}
-    namespace: {{ .Release.Namespace }}
+    name: openwebui-terminals
+    namespace: open-webui
