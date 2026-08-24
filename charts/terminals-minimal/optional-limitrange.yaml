@@ -1,0 +1,41 @@
+# OPTIONAL LimitRange.
+#
+# Apply this if the terminals namespace has a ResourceQuota that REQUIRES every
+# container to declare CPU/memory limits, e.g. the spawned terminal pod is
+# rejected with:
+#
+#   pods "terminal-xxxx" is forbidden: failed quota: ...: must specify
+#   limits.cpu for: open-terminal; limits.memory for: open-terminal
+#
+# The orchestrator spawns terminal pods WITHOUT resource limits by default, and
+# TERMINALS_MAX_CPU/TERMINALS_MAX_MEMORY only act as a ceiling on limits that are
+# already set -- they do not add limits. A LimitRange fills that gap: it injects
+# these defaults into any container (the terminal pods) that omits them, before
+# the ResourceQuota is evaluated, so the pods are admitted.
+#
+# Apply (match the namespace to where terminals run):
+#   oc apply -n open-webui -f charts/terminals-minimal/optional-limitrange.yaml
+#
+# NOTE: this applies namespace-wide, but only to containers that do not already
+# set their own limits/requests, so it will not change Open WebUI's own pods.
+# Adjust the numbers to fit the namespace's per-container quota max.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: openwebui-terminals-defaults
+  namespace: open-webui
+  labels:
+    app.kubernetes.io/name: openwebui-terminals
+    app.kubernetes.io/component: orchestrator
+    app.kubernetes.io/part-of: open-terminal
+spec:
+  limits:
+    - type: Container
+      # Injected as resources.limits when a container omits them.
+      default:
+        cpu: "500m"
+        memory: 512Mi
+      # Injected as resources.requests when a container omits them.
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi

@@ -21,6 +21,7 @@ templates/deployment.yaml   # the orchestrator
 templates/service.yaml      # ClusterIP Service Open WebUI connects to
 templates/NOTES.txt         # printed by `helm install` (ignored by kubectl)
 optional-route.yaml         # OpenShift Route — apply only if OWUI is off-cluster
+optional-limitrange.yaml    # LimitRange — apply only if the namespace quota needs it
 ```
 
 Everything is hard-wired to name **`openwebui-terminals`** in namespace
@@ -95,6 +96,27 @@ kubectl -n open-webui run keytest --rm -it --restart=Never --image=curlimages/cu
 
 If that prints `200`, the orchestrator is fine — fix the `key` on the Open WebUI
 side to match.
+
+### 403 `must specify limits.cpu/limits.memory` when a terminal spawns
+
+```
+pods "terminal-xxxx" is forbidden: failed quota: ...: must specify
+limits.cpu for: open-terminal; limits.memory for: open-terminal
+```
+
+The namespace has a **ResourceQuota that requires resource limits**, but the
+orchestrator spawns terminal pods without any. `TERMINALS_MAX_CPU`/
+`TERMINALS_MAX_MEMORY` only *cap* limits that already exist — they don't add
+them. Supply defaults with the bundled **LimitRange**, which injects
+limits/requests into containers that omit them before the quota is checked:
+
+```bash
+oc apply -n open-webui -f charts/terminals-minimal/optional-limitrange.yaml
+```
+
+Match `-n` to the namespace where terminals run, and tune the numbers to the
+namespace's per-container quota max. It only affects containers that don't set
+their own limits, so Open WebUI's pods are untouched.
 
 ## OpenShift notes
 
