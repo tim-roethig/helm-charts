@@ -60,6 +60,18 @@ spec:
             # escalation, RuntimeDefault seccomp -- without pinning a UID.
             - name: TERMINALS_KUBERNETES_RESTRICTED
               value: "true"
+            # The open-terminal image runs as its build user (uid 1000, with
+            # HOME=/home/user) and sets no ENV HOME. Under the default
+            # restricted-v2 SCC OpenShift assigns an arbitrary UID with no passwd
+            # entry, so HOME is empty and the entrypoint dies with:
+            #   mkdir: cannot create directory '//.local': Permission denied
+            # Pin uid + fsGroup 1000 so HOME resolves and the /home/user volume is
+            # group-writable. This is merged into every spawned terminal pod.
+            # REQUIRES granting the nonroot-v2 SCC to the terminals namespace's
+            # default ServiceAccount (one-time, cluster-admin):
+            #   oc adm policy add-scc-to-user nonroot-v2 -z default -n open-webui
+            - name: TERMINALS_KUBERNETES_POD_SECURITY_CONTEXT
+              value: '{"runAsUser":1000,"runAsNonRoot":true,"fsGroup":1000,"seccompProfile":{"type":"RuntimeDefault"}}'
             # Per-terminal persistent storage.
             - name: TERMINALS_KUBERNETES_STORAGE_SIZE
               value: "1Gi"

@@ -118,6 +118,29 @@ Match `-n` to the namespace where terminals run, and tune the numbers to the
 namespace's per-container quota max. It only affects containers that don't set
 their own limits, so Open WebUI's pods are untouched.
 
+### Terminal pod crashes: `mkdir: cannot create directory '//.local'`
+
+The `open-terminal` image runs as its build user (uid 1000, `HOME=/home/user`)
+and sets no `ENV HOME`. Under the default `restricted-v2` SCC, OpenShift runs the
+pod as an arbitrary UID with no passwd entry, so `$HOME` is empty and the
+entrypoint fails writing to `/home/user`.
+
+The deployment pins the terminal to uid/fsGroup **1000** (via
+`TERMINALS_KUBERNETES_POD_SECURITY_CONTEXT`) so `HOME` resolves and the
+`/home/user` volume is writable. That fixed UID is only admitted if the terminal
+pods' ServiceAccount is allowed to request it — grant the `nonroot-v2` SCC to the
+namespace's **default** ServiceAccount (one-time, cluster-admin):
+
+```bash
+oc adm policy add-scc-to-user nonroot-v2 -z default -n open-webui
+```
+
+`nonroot-v2` still forbids root — it only lets the pod choose a non-root UID. If
+you can't grant an SCC, or the image's build UID isn't 1000 (check with `id` in a
+terminal), tell me and I'll adjust. The looser alternative is `anyuid` with
+`TERMINALS_KUBERNETES_RESTRICTED=false`, which runs the image exactly as it does
+under Docker.
+
 ## OpenShift notes
 
 Built for OpenShift's **`restricted-v2`** SCC — no `anyuid`, no privileged pods.
