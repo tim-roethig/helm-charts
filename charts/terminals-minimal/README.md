@@ -68,11 +68,33 @@ kubectl -n open-webui set env deployment/open-webui \
   TERMINAL_SERVER_CONNECTIONS='[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://openwebui-terminals.open-webui.svc.cluster.local:8080","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]'
 ```
 
+Use the **literal** key value — do **not** use `"key":"$(TERMINALS_API_KEY)"`
+unless you also define a `TERMINALS_API_KEY` env var on the Open WebUI pod, or
+the unexpanded string is sent and every request is rejected.
+
 Restart Open WebUI, open a chat, and use the Terminal tool. Watch pods appear:
 
 ```bash
 kubectl -n open-webui get pods -l app.kubernetes.io/component=terminal -w
 ```
+
+### 401 on `/ports`, `/api/terminals`, `/files/*`
+
+The orchestrator runs in API-key mode: every proxied endpoint needs
+`Authorization: Bearer <key>` matching the Secret. A 401 means the `key` in
+`TERMINAL_SERVER_CONNECTIONS` doesn't match. Confirm the orchestrator accepts
+the Secret's key (prints `200`; without the header it prints `401`):
+
+```bash
+KEY=$(kubectl -n open-webui get secret openwebui-terminals-api-key -o jsonpath='{.data.api-key}' | base64 -d)
+kubectl -n open-webui run keytest --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $KEY" -H "X-User-Id: selftest" \
+  http://openwebui-terminals.open-webui.svc.cluster.local:8080/ports
+```
+
+If that prints `200`, the orchestrator is fine — fix the `key` on the Open WebUI
+side to match.
 
 ## OpenShift notes
 

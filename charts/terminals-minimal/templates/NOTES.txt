@@ -9,11 +9,22 @@ Orchestrator in-cluster URL (use this in Open WebUI):
    kubectl -n open-webui get secret openwebui-terminals-api-key \
      -o jsonpath='{.data.api-key}' | base64 -d ; echo
 
-2. Set this on your Open WebUI deployment (replace <API_KEY>):
+2. Set this on your Open WebUI deployment. Paste the LITERAL key from step 1
+   in place of <API_KEY> -- do NOT use "$(TERMINALS_API_KEY)" unless you also
+   define that env var on the Open WebUI pod, or every request gets HTTP 401:
 
    TERMINAL_SERVER_CONNECTIONS=[{"id":"terminals","name":"Terminals","enabled":true,"url":"http://openwebui-terminals.open-webui.svc.cluster.local:8080","key":"<API_KEY>","auth_type":"bearer","config":{"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]}}]
 
    Restart Open WebUI, open a chat, and use the Terminal tool.
+
+   401 on /ports, /api/terminals, /files/*? The key above does not match the
+   Secret. Verify the orchestrator accepts it (prints 200):
+
+   KEY=$(kubectl -n open-webui get secret openwebui-terminals-api-key -o jsonpath='{.data.api-key}' | base64 -d)
+   kubectl -n open-webui run keytest --rm -it --restart=Never --image=curlimages/curl -- \
+     curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer $KEY" -H "X-User-Id: selftest" \
+     http://openwebui-terminals.open-webui.svc.cluster.local:8080/ports
 
 3. Watch terminal pods appear:
 
