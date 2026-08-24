@@ -46,6 +46,11 @@ spec:
               value: "0.0.0.0"
             - name: TERMINALS_PORT
               value: "8080"
+            # The image defaults its SQLite DB to a path inside site-packages,
+            # which an OpenShift-assigned (arbitrary, non-root) UID cannot write.
+            # Point it at the writable /data volume mounted below instead.
+            - name: TERMINALS_DATABASE_URL
+              value: "sqlite+aiosqlite:////data/terminals.db"
             # Namespace the orchestrator spawns terminal pods into (this one).
             - name: TERMINALS_KUBERNETES_NAMESPACE
               value: "open-webui"
@@ -92,3 +97,14 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        # Writable scratch for the orchestrator's SQLite DB. On OpenShift the
+        # SCC-injected fsGroup makes this writable by the pod's UID.
+        # NOTE: emptyDir is ephemeral -- the terminal-tracking DB is lost on
+        # pod restart. For persistence, replace it with a PVC, or point
+        # TERMINALS_DATABASE_URL at an external Postgres.
+        - name: data
+          emptyDir: {}
